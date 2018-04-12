@@ -157,6 +157,10 @@ class Blockchain(object):
         new_chain = None
         invalid_chains = []
 
+        if len(neighbours) == 0:
+            print('this node is alone')
+            return False, invalid_chains
+
         # we're only looking for chains longer than ours
         max_length = len(self.chain)
 
@@ -172,7 +176,7 @@ class Blockchain(object):
                 if length > max_length and self.valid_chain(chain):
                     max_length = length
                     new_chain = chain
-                elif length < max_length:
+                elif length < max_length and self.valid_chain(chain):
                     invalid_chains.append(node)
 
             if new_chain:

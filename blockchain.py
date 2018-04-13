@@ -176,7 +176,7 @@ class Blockchain(object):
                 if length > max_length and self.valid_chain(chain):
                     max_length = length
                     new_chain = chain
-                elif length < max_length and self.valid_chain(chain):
+                elif not (length < max_length and self.valid_chain(chain)):
                     invalid_chains.append(node)
 
             if new_chain:

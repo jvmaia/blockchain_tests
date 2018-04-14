@@ -8,16 +8,26 @@ from uuid import uuid4
 import requests
 from flask import Flask, jsonify, request
 
+CHAIN_FILE = 'chain.json'
+
 
 class Blockchain(object):
 
     def __init__(self):
         self.current_transactions = []
-        self.chain = []
+        file_chain = open(CHAIN_FILE)
+        self.chain = json.load(file_chain)
+        file_chain.close()
         self.nodes = set()
 
         # the genesis block
-        self.new_block(previous_hash=1, proof=100)
+        if len(self.chain) < 0:
+            self.new_block(previous_hash=1, proof=100)
+
+    def update_file(self):
+        file_chain = open(CHAIN_FILE, 'w')
+        json_chain = json.dump(self.chain, file_chain)
+        file_chain.close()
 
     def new_block(self, proof, previous_hash=None):
         """
@@ -40,6 +50,7 @@ class Blockchain(object):
         self.current_transactions = []
 
         self.chain.append(block)
+        self.update_file()
         return block
 
     def new_transaction(self, sender, recipient, amount):

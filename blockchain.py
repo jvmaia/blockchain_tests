@@ -9,25 +9,35 @@ import requests
 from flask import Flask, jsonify, request
 
 CHAIN_FILE = 'chain.json'
+NODES_FILE = 'nodes.json'
 
 
 class Blockchain(object):
 
     def __init__(self):
         self.current_transactions = []
+
         file_chain = open(CHAIN_FILE)
         self.chain = json.load(file_chain)
         file_chain.close()
-        self.nodes = set()
+
+        file_nodes = open(NODES_FILE)
+        self.nodes = set(json.load(file_nodes))
+        file_nodes.close()
 
         # the genesis block
         if len(self.chain) < 0:
             self.new_block(previous_hash=1, proof=100)
 
-    def update_file(self):
+    def update_chainFile(self):
         file_chain = open(CHAIN_FILE, 'w')
         json_chain = json.dump(self.chain, file_chain)
         file_chain.close()
+
+    def update_nodesFile(self):
+        file_nodes = open(NODES_FILE, 'w')
+        json_nodes = json.dump(list(self.nodes), file_nodes)
+        file_nodes.close()
 
     def new_block(self, proof, previous_hash=None):
         """
@@ -50,7 +60,7 @@ class Blockchain(object):
         self.current_transactions = []
 
         self.chain.append(block)
-        self.update_file()
+        self.update_chainFile()
         return block
 
     def new_transaction(self, sender, recipient, amount):
@@ -126,6 +136,7 @@ class Blockchain(object):
 
         parsed_url = urlparse(address)
         self.nodes.add(parsed_url.netloc)
+        self.update_nodesFile()
 
     def valid_chain(self, chain):
         """

@@ -421,16 +421,17 @@ def register_nodes():
 def consensus():
     replaced, invalid_chains = blockchain.resolve_conflicts()
     print(f'invalid chains: {invalid_chains}')
+    chain = chain_to_jsonSerializable(blockchain.chain)
 
     if replaced:
         response = {
             'message': 'our chain was replaced',
-            'new_chain': blockchain.chain
+            'new_chain': chain
         }
     else:
         response = {
             'message': 'our chain is authoritative',
-            'chain': blockchain.chain
+            'chain': chain
         }
 
     return jsonify(response), 200

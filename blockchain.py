@@ -11,14 +11,109 @@ from flask import Flask, jsonify, request
 CHAIN_FILE = 'chain.json'
 NODES_FILE = 'nodes.json'
 
+to_dict = lambda x: x.__dict__
 
-class Blockchain(object):
+
+def chain_to_jsonSerializable(chain_):
+    chain = []
+    for block in chain_:
+        chain.append(block_to_jsonSerializable(block))
+
+    return chain
+
+
+def block_to_jsonSerializable(block_):
+    block = {}
+    block['index'] = block_['index']
+    block['timestamp'] = block_['timestamp']
+    block['proof'] = block_['proof']
+    block['previous_hash'] = block_['previous_hash']
+    block['transactions'] = []
+    for t in block_['transactions']:
+        transaction = {}
+        if t.sender == '0':
+            transaction['sender'] = t.sender
+        else:
+            transaction['sender'] = t.sender.address
+        transaction['recipient'] = t.recipient.address
+        transaction['amount'] = t.amount
+        block['transactions'].append(transaction)
+
+    return block
+
+
+def transactions_to_jsonSerializable(transactions_):
+    transactions = []
+    for transaction_ in transactions_:
+        transaction = {}
+        if transaction_.sender == '0':
+            transaction['sender'] = transaction_.sender
+        else:
+            transaction['sender'] = transaction_.sender.address
+
+        transaction['recipient'] = transaction_.recipient.address
+        transaction['amount'] = transaction_.amount
+        transactions.append(transaction)
+    return transactions
+
+
+class AddressNotFound(Exception):
+    pass
+
+
+class Address():
+
+    def __init__(self, address):
+        self.address = address
+        self.amount = 0
+
+
+class Transaction():
+
+    def __init__(self, sender, recipient, amount):
+        self.sender = sender
+        self.recipient = recipient
+        self.amount = amount
+
+    def is_valid(self):
+        if self.sender != '0' and self.sender.amount < self.amount:
+            return False
+        else:
+            return True
+
+    def execute(self):
+        if self.sender != '0':
+            self.sender.amount -= self.amount
+
+        self.recipient.amount += self.amount
+
+
+class Blockchain():
 
     def __init__(self):
         self.current_transactions = []
+        self.addresses = []
 
         file_chain = open(CHAIN_FILE)
         self.chain = json.load(file_chain)
+        for block in self.chain:
+            transactions_ = []
+            for t in block['transactions']:
+                if t['sender'] == '0':
+                    sender = '0'
+                elif not t['sender'] in self.addresses:
+                    sender = Address(t['sender'])
+                    self.addresses.append(sender)
+
+                if not t['recipient'] in self.addresses:
+                    recipient = Address(t['recipient'])
+                    self.addresses.append(recipient)
+
+                t = Transaction(sender, recipient, t['amount'])
+                t.execute()
+                transactions_.append(t)
+            block['transactions'] = transactions_
+
         file_chain.close()
 
         file_nodes = open(NODES_FILE)
@@ -26,12 +121,13 @@ class Blockchain(object):
         file_nodes.close()
 
         # the genesis block
-        if len(self.chain) < 0:
+        if len(self.chain) == 0:
             self.new_block(previous_hash=1, proof=100)
 
     def update_chainFile(self):
+        chain = chain_to_jsonSerializable(self.chain)
         file_chain = open(CHAIN_FILE, 'w')
-        json_chain = json.dump(self.chain, file_chain)
+        json_chain = json.dump(chain, file_chain)
         file_chain.close()
 
     def update_nodesFile(self):
@@ -63,6 +159,23 @@ class Blockchain(object):
         self.update_chainFile()
         return block
 
+    def get_address(self, address):
+        if address == '0':
+            return address
+        for address_ in self.addresses:
+            if address == address_.address:
+                return address_
+
+        raise AddressNotFound()
+
+    def getOrCreateAddress(self, address):
+        try:
+            get_address(address)
+        except:
+            address = Address(address)
+            self.addresses.append(address)
+            return address
+
     def new_transaction(self, sender, recipient, amount):
         """
         Creates a new transaction to go into the next mined Block
@@ -72,11 +185,18 @@ class Blockchain(object):
         :param amount: <int> Amount
         :return: <int> The index of the Block that will hold this transaction
         """
-        self.current_transactions.append({
-            'sender': sender,
-            'recipient': recipient,
-            'amount': amount
-        })
+        try:
+            sender = self.get_address(sender)
+        except AddressNotFound:
+            return None
+
+        recipient = self.getOrCreateAddress(recipient)
+
+        transaction = Transaction(sender, recipient, amount)
+        if not transaction.is_valid():
+            return None
+
+        self.current_transactions.append(transaction)
 
         return self.last_block['index'] + 1
 
@@ -219,6 +339,8 @@ blockchain = Blockchain()
 def mine():
     # We run the proof of work algorithm to get the next proof
     last_block = blockchain.last_block
+    last_block = block_to_jsonSerializable(last_block)
+
     last_proof = last_block['proof']
     proof = blockchain.proof_of_work(last_proof)
 
@@ -234,11 +356,12 @@ def mine():
     # forge the new Block by adding it to the chain
     previous_hash = blockchain.hash(last_block)
     block = blockchain.new_block(proof, previous_hash)
+    transactions = transactions_to_jsonSerializable(block['transactions'])
 
     response = {
         'message': 'New block forged',
         'index': block['index'],
-        'transactions': block['transactions'],
+        'transactions': transactions,
         'proof': block['proof'],
         'previous_hash': block['previous_hash']
     }
@@ -257,15 +380,19 @@ def new_transaction():
     index = blockchain.new_transaction(
         values['sender'], values['recipient'], values['amount'])
 
-    response = {'message': f'Transaction added to the Block {index}'}
+    if index == None:
+        response = {'message': 'Transaction invalid'}
+    else:
+        response = {'message': f'Transaction added to the Block {index}'}
 
     return jsonify(response), 201
 
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
+    chain = chain_to_jsonSerializable(blockchain.chain)
     response = {
-        'chain': blockchain.chain,
+        'chain': chain,
         'length': len(blockchain.chain)
     }
     return jsonify(response), 200

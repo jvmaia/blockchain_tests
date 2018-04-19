@@ -71,7 +71,7 @@ class Transaction():
         self.message = message
 
     def is_valid(self):
-        if self.sender != '0' and self.sender.amount < self.amount:
+        if (self.sender != '0' and self.sender.amount < self.amount) or (self.amount == 0):
             return False
         else:
             return True
@@ -192,6 +192,7 @@ class Blockchain():
             return None
 
         self.current_transactions.append(transaction)
+        transaction.execute()
 
         return self.last_block['index'] + 1
 
@@ -387,7 +388,7 @@ def new_transaction():
         )
 
     if index == None:
-        response = {'message': 'Transaction invalid'}
+        response = {'message': 'Invalid transaction'}
     else:
         response = {'message': f'Transaction added to the Block {index}'}
 

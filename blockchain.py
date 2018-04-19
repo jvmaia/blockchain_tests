@@ -14,34 +14,6 @@ NODES_FILE = 'nodes.json'
 to_dict = lambda x: x.__dict__
 
 
-def chain_to_jsonSerializable(chain_):
-    chain = []
-    for block in chain_:
-        chain.append(block_to_jsonSerializable(block))
-
-    return chain
-
-
-def block_to_jsonSerializable(block_):
-    block = {}
-    block['index'] = block_['index']
-    block['timestamp'] = block_['timestamp']
-    block['proof'] = block_['proof']
-    block['previous_hash'] = block_['previous_hash']
-    block['transactions'] = []
-    for t in block_['transactions']:
-        transaction = {}
-        if t.sender == '0':
-            transaction['sender'] = t.sender
-        else:
-            transaction['sender'] = t.sender.address
-        transaction['recipient'] = t.recipient.address
-        transaction['amount'] = t.amount
-        block['transactions'].append(transaction)
-
-    return block
-
-
 def transactions_to_jsonSerializable(transactions_):
     transactions = []
     for transaction_ in transactions_:
@@ -53,8 +25,30 @@ def transactions_to_jsonSerializable(transactions_):
 
         transaction['recipient'] = transaction_.recipient.address
         transaction['amount'] = transaction_.amount
+        transaction['message'] = transaction_.message
         transactions.append(transaction)
+
     return transactions
+
+
+def block_to_jsonSerializable(block_):
+    block = {}
+    block['index'] = block_['index']
+    block['timestamp'] = block_['timestamp']
+    block['proof'] = block_['proof']
+    block['previous_hash'] = block_['previous_hash']
+    block['transactions'] = transactions_to_jsonSerializable(
+        block_['transactions']
+    )
+    return block
+
+
+def chain_to_jsonSerializable(chain_):
+    chain = []
+    for block in chain_:
+        chain.append(block_to_jsonSerializable(block))
+
+    return chain
 
 
 class AddressNotFound(Exception):
@@ -70,10 +64,11 @@ class Address():
 
 class Transaction():
 
-    def __init__(self, sender, recipient, amount):
+    def __init__(self, sender, recipient, amount, message=None):
         self.sender = sender
         self.recipient = recipient
         self.amount = amount
+        self.message = message
 
     def is_valid(self):
         if self.sender != '0' and self.sender.amount < self.amount:
@@ -176,7 +171,7 @@ class Blockchain():
             self.addresses.append(address)
             return address
 
-    def new_transaction(self, sender, recipient, amount):
+    def new_transaction(self, sender, recipient, amount, message=None):
         """
         Creates a new transaction to go into the next mined Block
 
@@ -192,7 +187,7 @@ class Blockchain():
 
         recipient = self.getOrCreateAddress(recipient)
 
-        transaction = Transaction(sender, recipient, amount)
+        transaction = Transaction(sender, recipient, amount, message)
         if not transaction.is_valid():
             return None
 
@@ -377,8 +372,19 @@ def new_transaction():
     if not all(k in values for k in required):
         return 'Missing value(s): %s' % ([k for k in required if not k in values]), 400
 
-    index = blockchain.new_transaction(
-        values['sender'], values['recipient'], values['amount'])
+    if 'message' in values:
+        index = blockchain.new_transaction(
+            values['sender'],
+            values['recipient'],
+            values['amount'],
+            values['message']
+        )
+    else:
+        index = blockchain.new_transaction(
+            values['sender'],
+            values['recipient'],
+            values['amount']
+        )
 
     if index == None:
         response = {'message': 'Transaction invalid'}

@@ -1,6 +1,5 @@
 import hashlib
 import json
-from textwrap import dedent
 from time import time
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -93,20 +92,28 @@ class Blockchain():
         self.chain = json.load(file_chain)
         for block in self.chain:
             transactions_ = []
-            for t in block['transactions']:
-                if t['sender'] == '0':
+            for t_ in block['transactions']:
+                if t_['sender'] == '0':
                     sender = '0'
-                elif not t['sender'] in self.addresses:
-                    sender = Address(t['sender'])
+                elif not t_['sender'] in [address.address for address in self.addresses]:
+                    sender = Address(t_['sender'])
                     self.addresses.append(sender)
+                    senderIndex = len(self.addresses) - 1
 
-                if not t['recipient'] in self.addresses:
-                    recipient = Address(t['recipient'])
+                if not t_['recipient'] in [ad.address for ad in self.addresses]:
+                    recipient = Address(t_['recipient'])
                     self.addresses.append(recipient)
+                    recipientIndex = len(self.addresses) - 1
 
-                t = Transaction(sender, recipient, t['amount'])
-                t.execute()
+                t = Transaction(sender, recipient, t_['amount'])
+
+                if t.is_valid:
+                    if sender != '0':
+                        self.addresses[senderIndex].amount -= t_['amount']
+                    self.addresses[recipientIndex].amount += t_['amount']
+
                 transactions_.append(t)
+
             block['transactions'] = transactions_
 
         file_chain.close()
@@ -152,6 +159,7 @@ class Blockchain():
 
         self.chain.append(block)
         self.update_chainFile()
+
         return block
 
     def get_address(self, address):
@@ -323,6 +331,33 @@ class Blockchain():
 
             return False, invalid_chains
 
+    def get_transactions_by_address(self, address):
+        try:
+            address = self.get_address(address)
+        except:
+            return None, None
+
+        transactions = []
+        for block in self.chain:
+            for t in block['transactions']:
+                if address in (t.sender, t.recipient):
+                    transactions.append(t)
+
+        future_transactions = []
+        for t in self.current_transactions:
+            if address in (t.sender, t.recipient):
+                future_transactions.append(t)
+
+        return transactions, future_transactions
+
+    def get_balance(self, address):
+        try:
+            address = self.get_address(address)
+        except:
+            return None, None
+
+        return address.amount
+
 
 app = Flask(__name__)
 
@@ -442,6 +477,34 @@ def consensus():
         }
 
     return jsonify(response), 200
+
+
+@app.route('/transactions/wallet', methods=['POST'])
+def get_transactions():
+    values = request.get_json()
+
+    if not 'address' in values:
+        return 'Error: Missing address value', 400
+
+    transactions, future_transactions = blockchain.get_transactions_by_address(
+        values['address']
+    )
+
+    if transactions == None:
+        return "Error: this address doesn't exist", 400
+
+    transactions = transactions_to_jsonSerializable(transactions)
+    future_transactions = transactions_to_jsonSerializable(future_transactions)
+
+    actual_balance = blockchain.get_balance(values['address'])
+
+    response = {
+        'transactions': transactions,
+        'future_transactions': future_transactions,
+        'balance': actual_balance
+    }
+
+    return jsonify(response),  200
 
 
 if __name__ == '__main__':

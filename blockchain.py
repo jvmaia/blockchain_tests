@@ -7,7 +7,7 @@ from uuid import uuid4
 import requests
 from flask import Flask, jsonify, request
 
-CHAIN_FILE = 'chain.json'
+CHAIN_FILE = 'chain2.json'
 NODES_FILE = 'nodes.json'
 
 to_dict = lambda x: x.__dict__
@@ -64,22 +64,17 @@ class Address():
 class Transaction():
 
     def __init__(self, sender, recipient, amount, message=None):
-        self.sender = sender
-        self.recipient = recipient
+        self.sender, self.senderIndex = sender
+        self.recipient, self.recipientIndex = recipient
         self.amount = amount
         self.message = message
+        self.executed = False
 
     def is_valid(self):
         if (self.sender != '0' and self.sender.amount < self.amount) or (self.amount == 0):
             return False
         else:
             return True
-
-    def execute(self):
-        if self.sender != '0':
-            self.sender.amount -= self.amount
-
-        self.recipient.amount += self.amount
 
 
 class Blockchain():
@@ -95,24 +90,22 @@ class Blockchain():
             for t_ in block['transactions']:
                 if t_['sender'] == '0':
                     sender = '0'
-                elif not t_['sender'] in [address.address for address in self.addresses]:
-                    sender = Address(t_['sender'])
-                    self.addresses.append(sender)
-                    senderIndex = len(self.addresses) - 1
+                    senderIndex = None
+                else:
+                    sender, senderIndex = self.getOrCreateAddress(t_['sender'])
 
-                if not t_['recipient'] in [ad.address for ad in self.addresses]:
-                    recipient = Address(t_['recipient'])
-                    self.addresses.append(recipient)
-                    recipientIndex = len(self.addresses) - 1
+                recipient, recipientIndex = self.getOrCreateAddress(
+                    t_['recipient']
+                )
 
-                t = Transaction(sender, recipient, t_['amount'])
+                t = Transaction((sender, senderIndex),
+                                (recipient, recipientIndex), t_['amount'])
 
                 if t.is_valid:
-                    if sender != '0':
-                        self.addresses[senderIndex].amount -= t_['amount']
-                    self.addresses[recipientIndex].amount += t_['amount']
-
-                transactions_.append(t)
+                    self.execute_transaction(t)
+                    transactions_.append(t)
+                else:
+                    pass
 
             block['transactions'] = transactions_
 
@@ -174,20 +167,22 @@ class Blockchain():
 
     def get_address(self, address):
         if address == '0':
-            return address
-        for address_ in self.addresses:
-            if address == address_.address:
-                return address_
+            return address, None
+        list_of_addresses = [ad.address for ad in self.addresses]
+        for index, address_ in enumerate(list_of_addresses):
+            if address == address_:
+                return self.addresses[index], index
 
         raise AddressNotFound()
 
     def getOrCreateAddress(self, address):
         try:
-            get_address(address)
-        except:
+            return self.get_address(address)
+        except AddressNotFound:
             address = Address(address)
             self.addresses.append(address)
-            return address
+            index = len(self.addresses) - 1
+            return address, index
 
     def new_transaction(self, sender, recipient, amount, message=None):
         """
@@ -199,18 +194,24 @@ class Blockchain():
         :return: <int> The index of the Block that will hold this transaction
         """
         try:
-            sender = self.get_address(sender)
+            sender, senderIndex = self.get_address(sender)
         except AddressNotFound:
             return None
 
-        recipient = self.getOrCreateAddress(recipient)
+        recipient, recipientIndex = self.getOrCreateAddress(recipient)
 
-        transaction = Transaction(sender, recipient, amount, message)
+        transaction = Transaction(
+            (sender, senderIndex),
+            (recipient, recipientIndex),
+            amount,
+            message
+        )
+
         if not transaction.is_valid():
             return None
 
+        self.execute_transaction(transaction)
         self.current_transactions.append(transaction)
-        transaction.execute()
 
         if len(self.chain) == 0:
             return 0
@@ -344,10 +345,18 @@ class Blockchain():
 
             return False, invalid_chains
 
+    def execute_transaction(self, transaction):
+        if transaction.sender != '0':
+            self.addresses[
+                transaction.senderIndex].amount -= transaction.amount
+
+        self.addresses[transaction.recipientIndex].amount += transaction.amount
+        transaction.executed = True
+
     def get_transactions_by_address(self, address):
         try:
-            address = self.get_address(address)
-        except:
+            address, addressIndex = self.get_address(address)
+        except AddressNotFound:
             return None, None
 
         transactions = []
@@ -365,12 +374,11 @@ class Blockchain():
 
     def get_balance(self, address):
         try:
-            address = self.get_address(address)
-        except:
+            address, addressIndex = self.get_address(address)
+        except AddressNotFound:
             return None, None
 
         return address.amount
-
 
 app = Flask(__name__)
 

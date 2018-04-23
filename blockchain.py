@@ -124,6 +124,12 @@ class Blockchain():
 
         # the genesis block
         if len(self.chain) == 0:
+            self.new_transaction(
+                sender='0',
+                recipient=node_identifier,
+                amount=1
+            )
+
             self.new_block(previous_hash=1, proof=100)
 
     def update_chainFile(self):
@@ -145,9 +151,13 @@ class Blockchain():
         :param previous_hash: (optional) <str> Hash of the previous Block
         :return: <dict> New Block
         """
+        if len(self.chain) != 0:
+            index = len(self.chain)
+        else:
+            index = 0
 
         block = {
-            'index': len(self.chain) - 1,
+            'index': index,
             'timestamp': time(),
             'transactions': self.current_transactions,
             'proof': proof,
@@ -202,7 +212,10 @@ class Blockchain():
         self.current_transactions.append(transaction)
         transaction.execute()
 
-        return self.last_block['index'] + 1
+        if len(self.chain) == 0:
+            return 0
+        else:
+            return self.last_block['index'] + 1
 
     @property
     def last_block(self):

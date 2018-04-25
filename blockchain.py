@@ -3,14 +3,21 @@ import json
 from time import time
 from urllib.parse import urlparse
 from uuid import uuid4
+from fastecdsa import curve, ecdsa, keys
 
 import requests
 from flask import Flask, jsonify, request
 
-CHAIN_FILE = 'chain2.json'
+CHAIN_FILE = 'chain.json'
 NODES_FILE = 'nodes.json'
 
 to_dict = lambda x: x.__dict__
+
+
+def get_keypair():
+    priv_key, pub_key = keys.gen_keypair(curve.P256)
+    pub = f'{pub_key.x} {pub_key.y}'
+    return pub, priv_key
 
 
 def transactions_to_jsonSerializable(transactions_):
@@ -25,6 +32,7 @@ def transactions_to_jsonSerializable(transactions_):
         transaction['recipient'] = transaction_.recipient.address
         transaction['amount'] = transaction_.amount
         transaction['message'] = transaction_.message
+        transaction['signature'] = transaction_.signature
         transactions.append(transaction)
 
     return transactions
@@ -63,11 +71,12 @@ class Address():
 
 class Transaction():
 
-    def __init__(self, sender, recipient, amount, message=None):
+    def __init__(self, sender, recipient, amount, signature=None, message=None):
         self.sender, self.senderIndex = sender
         self.recipient, self.recipientIndex = recipient
         self.amount = amount
         self.message = message
+        self.signature = signature
         self.executed = False
 
     def is_valid(self):
@@ -75,6 +84,16 @@ class Transaction():
             return False
         else:
             return True
+
+    def is_signature_valid(self):
+        if self.sender == '0':
+            return True
+        else:
+            sigR, sigS = map(int, self.signature.split())
+            senderX, senderY = map(int, self.sender.address.split())
+            msg_signed = f'{self.sender.address} {self.recipient.address} {self.message} {self.amount}'
+            # TODO improve the msg_signed
+            return ecdsa.verify((sigR, sigS), msg_signed, (senderX, senderY))
 
 
 class Blockchain():
@@ -87,25 +106,31 @@ class Blockchain():
         self.chain = json.load(file_chain)
         for block in self.chain:
             transactions_ = []
-            for t_ in block['transactions']:
-                if t_['sender'] == '0':
+            for transaction in block['transactions']:
+                if transaction['sender'] == '0':
                     sender = '0'
                     senderIndex = None
                 else:
-                    sender, senderIndex = self.getOrCreateAddress(t_['sender'])
+                    sender, senderIndex = self.getOrCreateAddress(
+                        transaction['sender']
+                    )
 
                 recipient, recipientIndex = self.getOrCreateAddress(
-                    t_['recipient']
+                    transaction['recipient']
                 )
 
-                t = Transaction((sender, senderIndex),
-                                (recipient, recipientIndex), t_['amount'])
+                transaction_ = Transaction(
+                    (sender, senderIndex),
+                    (recipient, recipientIndex),
+                    transaction['amount'],
+                    signature=transaction['signature']
+                )
 
-                if t.is_valid:
-                    self.execute_transaction(t)
-                    transactions_.append(t)
-                else:
-                    pass
+                if not (transaction_.is_valid() and transaction_.is_signature_valid()):
+                    pass  # break the execution if transactions is not valid
+
+                self.execute_transaction(transaction_)
+                transactions_.append(transaction_)
 
             block['transactions'] = transactions_
 
@@ -119,7 +144,7 @@ class Blockchain():
         if len(self.chain) == 0:
             self.new_transaction(
                 sender='0',
-                recipient=node_identifier,
+                recipient=public_key,
                 amount=1
             )
 
@@ -202,7 +227,7 @@ class Blockchain():
             index = len(self.addresses) - 1
             return address, index
 
-    def new_transaction(self, sender, recipient, amount, message=None):
+    def new_transaction(self, sender, recipient, amount, signature=None, message=None):
         """
         Creates a new transaction to go into the next mined Block
 
@@ -222,11 +247,12 @@ class Blockchain():
             (sender, senderIndex),
             (recipient, recipientIndex),
             amount,
+            signature,
             message
         )
 
-        if not transaction.is_valid():
-            return None
+        if not (transaction.is_valid() and transaction.is_signature_valid()):
+            return None  # stop execution if transactions is not valid
 
         self.execute_transaction(transaction)
         self.current_transactions.append(transaction)
@@ -418,7 +444,13 @@ class Blockchain():
 
 app = Flask(__name__)
 
-node_identifier = str(uuid4()).replace('-', '')
+option = input('do you already have your public/private keys? [(Y)es/(N)o]: ')
+if option == 'Y':
+    public_key = input('enter your public key: ')
+else:
+    public_key, private_key = get_keypair()
+    print(f'your public key is: {public_key}')
+    print(f'your private key is: {private_key}\nkeep it in secret please')
 
 blockchain = Blockchain()
 
@@ -437,7 +469,7 @@ def mine():
 
     blockchain.new_transaction(
         sender='0',
-        recipient=node_identifier,
+        recipient=public_key,
         amount=1
     )
 
@@ -461,7 +493,7 @@ def mine():
 def new_transaction():
     values = request.get_json()
 
-    required = ['sender', 'recipient', 'amount']
+    required = ['sender', 'recipient', 'amount', 'signature']
     if not all(k in values for k in required):
         return 'Missing value(s): %s' % ([k for k in required if not k in values]), 400
 
@@ -470,13 +502,15 @@ def new_transaction():
             values['sender'],
             values['recipient'],
             values['amount'],
-            values['message']
+            signature=values['signature'],
+            message=values['message']
         )
     else:
         index = blockchain.new_transaction(
             values['sender'],
             values['recipient'],
-            values['amount']
+            values['amount'],
+            signature=values['signature']
         )
 
     if index == None:

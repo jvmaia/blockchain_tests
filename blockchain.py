@@ -126,12 +126,18 @@ class Blockchain():
             self.new_block(previous_hash=1, proof=100)
 
     def update_chainFile(self):
+        """
+        Update the chain file
+        """
         chain = chain_to_jsonSerializable(self.chain)
         file_chain = open(CHAIN_FILE, 'w')
         json_chain = json.dump(chain, file_chain)
         file_chain.close()
 
     def update_nodesFile(self):
+        """
+        Update the nodes file
+        """
         file_nodes = open(NODES_FILE, 'w')
         json_nodes = json.dump(list(self.nodes), file_nodes)
         file_nodes.close()
@@ -166,6 +172,12 @@ class Blockchain():
         return block
 
     def get_address(self, address):
+        """
+        Return the wallet and the index in the self.addresses list
+
+        :param address: <string> the address of the wallet
+        :return: <Address> <int> the address and it index in the self.addresses
+        """
         if address == '0':
             return address, None
         list_of_addresses = [ad.address for ad in self.addresses]
@@ -176,6 +188,12 @@ class Blockchain():
         raise AddressNotFound()
 
     def getOrCreateAddress(self, address):
+        """
+        Return the wallet (or create it) and the index in the self.addresses list
+
+        :param address: <string> the address of the wallet
+        :return: <Address> <int> the address and it index in the self.addresses
+        """
         try:
             return self.get_address(address)
         except AddressNotFound:
@@ -346,6 +364,11 @@ class Blockchain():
             return False, invalid_chains
 
     def execute_transaction(self, transaction):
+        """
+        Execute the transaction received
+
+        :param transaction: <Transaction> the transaction
+        """
         if transaction.sender != '0':
             self.addresses[
                 transaction.senderIndex].amount -= transaction.amount
@@ -354,6 +377,12 @@ class Blockchain():
         transaction.executed = True
 
     def get_transactions_by_address(self, address):
+        """
+        Return all transaction containing the address received, and the future_transactions to the next block
+
+        :param address: <string> the address of the wallet
+        :return: List<Transactions> transactions containing the address or None,None when the wallet doesn't exist
+        """
         try:
             address, addressIndex = self.get_address(address)
         except AddressNotFound:
@@ -373,12 +402,19 @@ class Blockchain():
         return transactions, future_transactions
 
     def get_balance(self, address):
+        """
+        Return the balance of the wallet
+
+        :param address: <string> the address of the wallet
+        :return: <int> the amont of the wallet
+        """
         try:
             address, addressIndex = self.get_address(address)
         except AddressNotFound:
             return None, None
 
         return address.amount
+
 
 app = Flask(__name__)
 

@@ -234,6 +234,8 @@ class Blockchain():
         :param sender: <str> Address of the Sender
         :param recipient: <str> Address of the Recipient
         :param amount: <int> Amount
+        :param signature: <int> signature that confirm the owner's wallet
+        :param message: <str> optional. message of the transaction
         :return: <int> The index of the Block that will hold this transaction
         """
         try:

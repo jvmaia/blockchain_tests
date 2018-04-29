@@ -346,6 +346,9 @@ class Blockchain():
             if not self.valid_proof(last_block['proof'], block['proof']):
                 return False
 
+            if block['timestamp'] < last_block['timestamp']:
+                return False
+
             last_block = block
             current_index += 1
 

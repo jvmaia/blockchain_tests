@@ -8,7 +8,7 @@ from fastecdsa import curve, ecdsa, keys
 import requests
 from flask import Flask, jsonify, request
 
-CHAIN_FILE = 'chain.json'
+CHAIN_FILE = 'chain9.json'
 NODES_FILE = 'nodes.json'
 
 to_dict = lambda x: x.__dict__
@@ -85,14 +85,14 @@ class Transaction():
         else:
             return True
 
-    def is_signature_valid(self):
+    def is_signature_valid(self, transactions):
         if self.sender == '0':
             return True
         else:
             sigR, sigS = map(int, self.signature.split())
             senderX, senderY = map(int, self.sender.address.split())
-            msg_signed = f'{self.sender.address} {self.recipient.address} {self.message} {self.amount}'
-            # TODO improve the msg_signed
+            sender_transactions = len(transactions)
+            msg_signed = f'{self.sender.address} {self.recipient.address} {self.message} {self.amount} {sender_transactions}'
             return ecdsa.verify((sigR, sigS), msg_signed, (senderX, senderY))
 
 
@@ -126,7 +126,8 @@ class Blockchain():
                     signature=transaction['signature']
                 )
 
-                if not (transaction_.is_valid() and transaction_.is_signature_valid()):
+                sender_transactions = self.getTransactionsByAddress(sender)
+                if not (transaction_.is_valid() and transaction_.is_signature_valid(sender_transactions)):
                     pass  # break the execution if transactions is not valid
 
                 self.execute_transaction(transaction_)
@@ -253,7 +254,8 @@ class Blockchain():
             message
         )
 
-        if not (transaction.is_valid() and transaction.is_signature_valid()):
+        sender_transactions = self.getTransactionsByAddress(sender)
+        if not (transaction.is_valid() and transaction.is_signature_valid(sender_transactions)):
             return None  # stop execution if transactions is not valid
 
         self.execute_transaction(transaction)
@@ -407,23 +409,28 @@ class Blockchain():
         self.addresses[transaction.recipientIndex].amount += transaction.amount
         transaction.executed = True
 
-    def get_transactions_by_address(self, address):
+    def getTransactionsByAddress(self, address):
         """
         Return all transaction containing the address received, and the future_transactions to the next block
 
-        :param address: <string> the address of the wallet
+        :param address: <string> or <Address> the address of the wallet
         :return: List<Transactions> transactions containing the address or None,None when the wallet doesn't exist
         """
         try:
             address, addressIndex = self.get_address(address)
         except AddressNotFound:
-            return None, None
+            if not isinstance(address, Address):
+                return None, None
 
         transactions = []
         for block in self.chain:
             for t in block['transactions']:
-                if address in (t.sender, t.recipient):
-                    transactions.append(t)
+                try:
+                    if address in (t.sender, t.recipient):
+                        transactions.append(t)
+                except:
+                    if address in (t['sender'], t['recipient']):
+                        transactions.append(t)
 
         future_transactions = []
         for t in self.current_transactions:
@@ -458,7 +465,6 @@ else:
     print(f'your private key is: {private_key}\nkeep it in secret please')
 
 blockchain = Blockchain()
-
 
 @app.route('/mine', methods=['GET'])
 def mine():
@@ -582,7 +588,7 @@ def get_transactions():
     if not 'address' in values:
         return 'Error: Missing address value', 400
 
-    transactions, future_transactions = blockchain.get_transactions_by_address(
+    transactions, future_transactions = blockchain.getTransactionsByAddress(
         values['address']
     )
 
